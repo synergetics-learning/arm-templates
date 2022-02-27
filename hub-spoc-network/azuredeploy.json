@@ -1,0 +1,316 @@
+{
+	"$schema": "https://schema.management.azure.com/schemas/2019-08-01/tenantDeploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"adminUsername": {
+		"type": "string",
+		"defaultValue":"mahendra",
+		"metadata": {
+			"description": "Administrator Username for both VMs"
+			}
+		},
+		"adminPassword": {
+			"type": "string",
+			"defaultValue":"Password@1234",
+			"metadata": {
+				"description": "Admin User's Password"
+		}
+	}
+		
+	},
+	"functions": [],
+	"variables": {
+		"storage-name": "[toLower(uniqueString( resourceGroup().id, deployment().name ))]",
+
+	},
+	"resources": [
+		{
+			"name": "MyVNet1",
+			"type": "Microsoft.Network/virtualNetworks",
+			"apiVersion": "2020-11-01",
+			"location": "[resourceGroup().location]",
+			"tags": {
+				"displayName": "VNet 1 Spoc Network"
+			},
+			"properties": {
+				"addressSpace": {
+					"addressPrefixes": [
+						"10.1.0.0/16"
+					]
+				},
+				"subnets": [
+					{
+						"name": "Subnet-1",
+						"properties": {
+							"addressPrefix": "10.1.1.0/24"
+						}
+					}
+				]
+			}
+		},
+		{
+			"name": "MyVNet2",
+			"type": "Microsoft.Network/virtualNetworks",
+			"apiVersion": "2020-11-01",
+			"location": "[resourceGroup().location]",
+			"tags": {
+				"displayName": "VNet 2 Spoc Network"
+			},
+			"properties": {
+				"addressSpace": {
+					"addressPrefixes": [
+						"10.2.0.0/16"
+					]
+				},
+				"subnets": [
+					{
+						"name": "Subnet-1",
+						"properties": {
+							"addressPrefix": "10.2.1.0/24"
+						}
+					}
+				]
+			}
+		},
+		{
+			"name": "MyHubNet",
+			"type": "Microsoft.Network/virtualNetworks",
+			"apiVersion": "2020-11-01",
+			"location": "[resourceGroup().location]",
+			"tags": {
+				"displayName": "Hub Network"
+			},
+			"properties": {
+				"addressSpace": {
+					"addressPrefixes": [
+						"10.0.0.0/16"
+					]
+				},
+				"subnets": [
+					{
+						"name": "Subnet-1",
+						"properties": {
+							"addressPrefix": "10.0.1.0/24"
+						}
+					},
+					{
+						"name": "AzureBastionSubnet",
+						"properties": {
+							"addressPrefix": "10.0.3.0/24"
+						}
+					}
+				]
+			}
+		},
+		{
+			"name": "[toLower(variables('storage-name'))]",
+			"type": "Microsoft.Storage/storageAccounts",
+			"apiVersion": "2021-04-01",
+			"location": "[resourceGroup().location]",
+			"tags": {
+				"displayName": "VM Storage Account"
+			},
+			"sku": {
+				"name": "Standard_LRS"
+			},
+			"kind": "Storage"
+		},
+		{
+			"name": "vm1-PublicIP",
+			"type": "Microsoft.Network/publicIPAddresses",
+			"apiVersion": "2020-11-01",
+			"location": "[resourceGroup().location]",
+			"tags": {
+				"displayName": "Public IP for VM1"
+			},
+			"properties": {
+				"publicIPAllocationMethod": "Dynamic",
+				"dnsSettings": {
+					"domainNameLabel": "vm1"
+				}
+			}
+		},
+		{
+			"name": "vm1-NIC",
+			"type": "Microsoft.Network/networkInterfaces",
+			"apiVersion": "2020-11-01",
+			"location": "[resourceGroup().location]",
+			"dependsOn": [
+				"[resourceId('Microsoft.Network/publicIPAddresses', 'vm1-PublicIP')]",
+				"[resourceId('Microsoft.Network/virtualNetworks', 'MyVNet1')]"
+			],
+			"tags": {
+				"displayName": "VM1 Network Interface"
+			},
+			"properties": {
+				"ipConfigurations": [
+					{
+						"name": "ipConfig1",
+						"properties": {
+							"privateIPAllocationMethod": "Dynamic",
+							"publicIPAddress": {
+								"id": "[resourceId('Microsoft.Network/publicIPAddresses', 'vm1-PublicIP')]"
+							},
+							"subnet": {
+								"id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', 'MyVNet1', 'Subnet-1')]"
+							}
+						}
+					}
+				]
+			}
+		},
+		{
+			"name": "vm1",
+			"type": "Microsoft.Compute/virtualMachines",
+			"apiVersion": "2021-03-01",
+			"location": "[resourceGroup().location]",
+			"dependsOn": [
+				"[resourceId('Microsoft.Storage/storageAccounts', toLower(variables('storage-name')))]",
+				"[resourceId('Microsoft.Network/networkInterfaces', 'vm1-NIC')]"
+			],
+			"tags": {
+				"displayName": "Windows VM"
+			},
+			"properties": {
+				"hardwareProfile": {
+					"vmSize": "Standard_A2_v2"
+				},
+				"osProfile": {
+					"computerName": "vm1",
+					"adminUsername": "[parameters('adminUsername')]",
+					"adminPassword": "[parameters('adminPassword')]"
+				},
+				"storageProfile": {
+					"imageReference": {
+						"publisher": "MicrosoftWindowsServer",
+						"offer": "WindowsServer",
+						"sku": "2019-Datacenter",
+						"version": "latest"
+					},
+					"osDisk": {
+						"name": "windowsVM1OSDisk",
+						"caching": "ReadWrite",
+						"createOption": "FromImage"
+					}
+				},
+				"networkProfile": {
+					"networkInterfaces": [
+						{
+							"id": "[resourceId('Microsoft.Network/networkInterfaces', 'vm1-NIC')]"
+						}
+					]
+				},
+				"diagnosticsProfile": {
+					"bootDiagnostics": {
+						"enabled": true,
+						"storageUri": "[reference(resourceId('Microsoft.Storage/storageAccounts/', toLower(variables('storage-name')))).primaryEndpoints.blob]"
+					}
+				}
+			}
+		},
+		{
+			"name": "VM2-public-ip",
+			"type": "Microsoft.Network/publicIPAddresses",
+			"apiVersion": "2020-11-01",
+			"location": "[resourceGroup().location]",
+			"tags": {
+				"displayName": "PublicIPAddress"
+			},
+			"properties": {
+				"publicIPAllocationMethod": "Dynamic",
+				"dnsSettings": {
+					"domainNameLabel": "vm2"
+				}
+			}
+		},
+		{
+			"name": "vm2-nsg",
+			"type": "Microsoft.Network/networkSecurityGroups",
+			"apiVersion": "2020-11-01",
+			"location": "[resourceGroup().location]",
+			"properties": {
+			}
+		},
+		
+		{
+			"name": "vm2-nic",
+			"type": "Microsoft.Network/networkInterfaces",
+			"apiVersion": "2020-11-01",
+			"location": "[resourceGroup().location]",
+			"dependsOn": [
+				"[resourceId('Microsoft.Network/publicIPAddresses', 'VM2-public-ip')]",
+				"[resourceId('Microsoft.Network/virtualNetworks', 'MyVNet2')]"
+			],
+			"tags": {
+				"displayName": "VM2 Network Interface"
+			},
+			"properties": {
+				
+				"ipConfigurations": [
+					{
+						"name": "ipConfig1",
+						"properties": {
+							"privateIPAllocationMethod": "Dynamic",
+							"publicIPAddress": {
+								"id": "[resourceId('Microsoft.Network/publicIPAddresses', 'VM2-public-ip')]"
+							},
+							"subnet": {
+								"id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', 'MyVNet2', 'Subnet-1')]"
+							}
+						}
+					}
+				]
+			}
+		},
+		{
+			"name": "vm2",
+			"type": "Microsoft.Compute/virtualMachines",
+			"apiVersion": "2021-03-01",
+			"location": "[resourceGroup().location]",
+			"dependsOn": [
+				"[resourceId('Microsoft.Network/networkInterfaces', 'vm2-nic')]"
+			],
+			"tags": {
+				"displayName": "VM2 Linux server"
+			},
+			"properties": {
+				"hardwareProfile": {
+					"vmSize": "Standard_A2_v2"
+				},
+				"osProfile": {
+					"computerName": "vm2",
+					"adminUsername": "[parameters('adminUsername')]",
+					"adminPassword": "[parameters('adminPassword')]"
+				},
+				"storageProfile": {
+					"imageReference": {
+						"publisher": "Canonical",
+						"offer": "0001-com-ubuntu-server-focal",
+						"sku": "20_04-lts",
+						"version": "latest"
+					},
+					"osDisk": {
+						"name": "VM2-OSDisk",
+						"caching": "ReadWrite",
+						"createOption": "FromImage"
+					}
+				},
+				"networkProfile": {
+					"networkInterfaces": [
+						{
+							"id": "[resourceId('Microsoft.Network/networkInterfaces', 'vm2-nic')]"
+						}
+					]
+				},
+				"diagnosticsProfile": {
+					"bootDiagnostics": {
+						"enabled": true,
+						"storageUri": "[reference(resourceId('Microsoft.Storage/storageAccounts/', toLower(variables('storage-name')))).primaryEndpoints.blob]"
+					}
+				}
+			}
+		}
+
+	],
+	"outputs": {}
+}
